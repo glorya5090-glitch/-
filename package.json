@@ -1,0 +1,67 @@
+{
+  "name": "@worldlibertyfinancial/agentpay-sdk",
+  "version": "0.1.0",
+  "description": "Single-entrypoint AgentPay CLI",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "agentpay": "dist/cli.cjs"
+  },
+  "files": [
+    "dist",
+    "scripts",
+    "src",
+    "packages",
+    "crates",
+    "Cargo.toml",
+    "Cargo.lock",
+    "README.md",
+    "turbo.json",
+    "pnpm-workspace.yaml",
+    "tsconfig.base.json",
+    "tsconfig.json",
+    "tsup.config.ts"
+  ],
+  "scripts": {
+    "build": "turbo run build && tsup --config tsup.config.ts",
+    "build:installer-bundle": "node ./scripts/build-installer-bundle.mjs",
+    "check": "turbo run check typecheck && cargo test --workspace --no-run",
+    "install:cli-launcher": "node ./scripts/install-cli-launcher.mjs",
+    "install:rust-binaries": "node ./scripts/install-rust-binaries.mjs",
+    "postinstall": "node ./scripts/install-rust-binaries.mjs",
+    "prepack": "npm run build",
+    "test": "pnpm test:ts && pnpm test:rust",
+    "test:rust": "node ./scripts/run-tests-isolated.mjs -- cargo test --workspace",
+    "test:ts": "node ./scripts/run-ts-tests.mjs",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "turbo run typecheck && tsc --noEmit"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "apps/maintenance/*"
+  ],
+  "packageManager": "pnpm@10.6.3",
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.11",
+    "@types/node": "^24.0.0",
+    "@vitest/coverage-v8": "^3.2.4",
+    "@worldlibertyfinancial/agent-config": "workspace:*",
+    "@worldlibertyfinancial/agent-rpc": "workspace:*",
+    "c8": "^11.0.0",
+    "commander": "^13.1.0",
+    "tsup": "^8.4.0",
+    "tsx": "^4.21.0",
+    "turbo": "^2.4.4",
+    "typescript": "^5.8.2",
+    "viem": "^2.37.5"
+  },
+  "dependencies": {
+    "cuimp": "^1.10.0",
+    "playwright-core": "^1.58.2"
+  }
+}

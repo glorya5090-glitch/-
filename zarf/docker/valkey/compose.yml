@@ -1,0 +1,33 @@
+services:
+  valkey:
+    image: valkey/valkey:8.1
+    container_name: agentpay-valkey
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - valkey_data:/data
+      - ./valkey.conf:/etc/valkey/valkey.conf:ro
+    command: ['valkey-server', '/etc/valkey/valkey.conf']
+    healthcheck:
+      test: ['CMD', 'valkey-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  valkey-commander:
+    image: ghcr.io/joeferner/redis-commander:latest
+    container_name: agentpay-valkey-commander
+    restart: unless-stopped
+    ports:
+      - '8081:8081'
+    environment:
+      REDIS_HOSTS: local:valkey:6379
+    depends_on:
+      valkey:
+        condition: service_healthy
+
+volumes:
+  valkey_data:
+    driver: local

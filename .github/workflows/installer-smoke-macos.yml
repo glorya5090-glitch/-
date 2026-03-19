@@ -1,0 +1,165 @@
+name: Installer Smoke (macOS)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release tag to publish, for example v0.1.0
+        required: true
+        type: string
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: installer-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ONE_CLICK_RELEASE_REPO: ${{ github.repository }}
+  ONE_CLICK_RELEASE_TAG: one-click-latest
+  ONE_CLICK_INSTALLER_ASSET: installer.sh
+
+permissions:
+  contents: write
+
+jobs:
+  installer-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            bundle_name: agentpay-sdk-macos-x64.tar.gz
+            artifact_name: agentpay-installer-bundle-macos-x64
+            smoke_logs_name: installer-smoke-logs-macos-x64
+            run_unit_tests: false
+          - runner: macos-15
+            bundle_name: agentpay-sdk-macos-arm64.tar.gz
+            artifact_name: agentpay-installer-bundle-macos-arm64
+            smoke_logs_name: installer-smoke-logs-macos-arm64
+            run_unit_tests: true
+
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      SMOKE_DIR: ${{ github.workspace }}/.agentpay-installer-smoke-${{ matrix.runner }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.87.0
+
+      - name: Validate installer scripts
+        run: |
+          bash -n scripts/installer.sh
+          bash -n scripts/run-installer-smoke.sh
+
+      - name: Run installer unit tests
+        if: ${{ matrix.run_unit_tests }}
+        run: node --test test/setup-agentpay-script.test.mjs test/installer-smoke-script.test.mjs
+
+      - name: Build precompiled installer bundle
+        run: |
+          npm run build
+          cargo build --locked --release \
+            -p agentpay-daemon \
+            -p agentpay-admin \
+            -p agentpay-agent
+          bundle_path="$RUNNER_TEMP/${{ matrix.bundle_name }}"
+          node scripts/build-installer-bundle.mjs --output "$bundle_path"
+          echo "BUNDLE_ARCHIVE=$bundle_path" >> "$GITHUB_ENV"
+
+      - name: Upload precompiled installer bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ env.BUNDLE_ARCHIVE }}
+          if-no-files-found: error
+
+      - name: Run installer smoke
+        run: bash scripts/run-installer-smoke.sh --work-dir "$SMOKE_DIR" --bundle-archive "$BUNDLE_ARCHIVE"
+
+      - name: Upload installer smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.smoke_logs_name }}
+          path: ${{ env.SMOKE_DIR }}/logs
+          if-no-files-found: ignore
+
+  publish-one-click-release:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - installer-smoke
+    runs-on: macos-15
+    timeout-minutes: 15
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+          fi
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: agentpay-installer-bundle-macos-*
+          path: bundles
+          merge-multiple: true
+
+      - name: Prepare installer release assets
+        run: |
+          mkdir -p published-assets
+          release_tag="${{ steps.tag.outputs.tag }}"
+          perl -0pe "s#__AGENTPAY_PUBLIC_RELEASE_REPO__#${ONE_CLICK_RELEASE_REPO}#g; s#__AGENTPAY_PUBLIC_RELEASE_TAG__#${release_tag}#g" \
+            scripts/installer.sh > "published-assets/$ONE_CLICK_INSTALLER_ASSET"
+          chmod 755 "published-assets/$ONE_CLICK_INSTALLER_ASSET"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release_repo="$ONE_CLICK_RELEASE_REPO"
+          release_tag="${{ steps.tag.outputs.tag }}"
+          release_title="AgentPay SDK ${release_tag}"
+          release_notes="Precompiled AgentPay SDK bundles for ${release_tag}"
+
+          if gh release view "$release_tag" --repo "$release_repo" >/dev/null 2>&1; then
+            gh release edit "$release_tag" --repo "$release_repo" \
+              --title "$release_title" \
+              --notes "$release_notes"
+          else
+            gh release create "$release_tag" \
+              --repo "$release_repo" \
+              --title "$release_title" \
+              --notes "$release_notes"
+          fi
+
+          gh release upload "$release_tag" \
+            --repo "$release_repo" \
+            bundles/*.tar.gz \
+            "published-assets/$ONE_CLICK_INSTALLER_ASSET" \
+            --clobber

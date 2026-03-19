@@ -1,0 +1,50 @@
+[workspace]
+members = [
+    "crates/vault-domain",
+    "crates/vault-policy",
+    "crates/vault-signer",
+    "crates/vault-daemon",
+    "crates/vault-transport-unix",
+    "crates/vault-sdk-agent",
+    "crates/vault-cli-admin",
+    "crates/vault-cli-agent",
+    "crates/vault-cli-daemon",
+    "crates/vault-transport-xpc",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+version = "0.1.0"
+authors = ["AgentPay SDK Team"]
+
+[workspace.dependencies]
+alloy-primitives = "0.8"
+alloy-sol-types = "0.8"
+anyhow = "1"
+argon2 = "0.5"
+async-trait = "0.1"
+block = "0.1"
+chacha20poly1305 = "0.10"
+clap = { version = "4.5", features = ["derive", "env"] }
+core-foundation = "0.10"
+crossterm = "0.28"
+hex = "0.4"
+k256 = { version = "0.13", features = ["ecdsa"] }
+libc = "0.2"
+rand = "0.9"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+ratatui = "0.29"
+rpassword = "7"
+security-framework = { version = "3.7", features = ["OSX_10_15"] }
+security-framework-sys = "2.17"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+time = { version = "=0.3.36", features = ["macros", "serde", "formatting", "parsing"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "net", "io-util", "time", "signal"] }
+uuid = { version = "1", features = ["serde", "v4"] }
+zeroize = "1"
+x25519-dalek = { version = "2", features = ["static_secrets", "zeroize"] }

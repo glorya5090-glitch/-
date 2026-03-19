@@ -1,0 +1,15 @@
+target/
+.DS_Store
+node_modules/
+dist/*
+.turbo/
+.next/
+*.tsbuildinfo
+coverage/
+junit/
+packages/*/dist/
+packages/*/node_modules/
+apps/*/dist/
+apps/*/node_modules/
+*.tgz
+.coverage/
