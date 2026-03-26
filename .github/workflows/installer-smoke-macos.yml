@@ -1,4 +1,4 @@
-name: Installer Smoke (macOS)
+name: Installer Smoke
 
 on:
   workflow_dispatch:
@@ -39,6 +39,11 @@ jobs:
             artifact_name: agentpay-installer-bundle-macos-arm64
             smoke_logs_name: installer-smoke-logs-macos-arm64
             run_unit_tests: true
+          - runner: ubuntu-24.04
+            bundle_name: agentpay-sdk-linux-x64.tar.gz
+            artifact_name: agentpay-installer-bundle-linux-x64
+            smoke_logs_name: installer-smoke-logs-linux-x64
+            run_unit_tests: false
 
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
@@ -77,10 +82,18 @@ jobs:
       - name: Build precompiled installer bundle
         run: |
           npm run build
-          cargo build --locked --release \
-            -p agentpay-daemon \
-            -p agentpay-admin \
-            -p agentpay-agent
+          if [[ "$(uname -s)" == "Darwin" ]]; then
+            cargo build --locked --release \
+              -p agentpay-daemon \
+              -p agentpay-admin \
+              -p agentpay-agent \
+              -p agentpay-system-keychain
+          else
+            cargo build --locked --release \
+              -p agentpay-daemon \
+              -p agentpay-admin \
+              -p agentpay-agent
+          fi
           bundle_path="$RUNNER_TEMP/${{ matrix.bundle_name }}"
           node scripts/build-installer-bundle.mjs --output "$bundle_path"
           echo "BUNDLE_ARCHIVE=$bundle_path" >> "$GITHUB_ENV"
@@ -126,7 +139,7 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          pattern: agentpay-installer-bundle-macos-*
+          pattern: agentpay-installer-bundle-*
           path: bundles
           merge-multiple: true
 

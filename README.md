@@ -19,7 +19,7 @@ Documentation: `https://docs.worldlibertyfinancial.com/agentpay-sdk`
 The script can:
 
 - let the user choose an install directory
-- download a prebuilt macOS runtime bundle instead of compiling Cargo or pnpm workspaces locally
+- download a prebuilt runtime bundle for the current OS instead of compiling Cargo or pnpm workspaces locally
 - bootstrap Node 20+ when needed
 - install `agentpay` into a dedicated `AGENTPAY_HOME`
 - auto-detect and preselect supported AI agent targets and already-installed paths
@@ -41,7 +41,7 @@ curl -fsSL https://wlfi.sh | bash -s -- --skills-only
 
 That mode:
 
-- downloads the same macOS AgentPay SDK bundle used by the full installer and only applies the embedded skill files
+- downloads the same AgentPay SDK bundle used by the full installer and only applies the embedded skill files
 - auto-detects supported AI agent paths and already-installed destinations
 - presents a toggleable target list and lets the user add custom skill-pack or adapter destinations
 - supports Codex, Claude, Cline, Goose, Windsurf, OpenClaw, portable/legacy `.agents`, Cursor, and workspace adapters like `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, and Copilot instructions
@@ -50,10 +50,10 @@ That mode:
 
 ### Prerequisites
 
-- Full AgentPay SDK runtime install: macOS, network access to download the public installer assets, and Homebrew only when the machine does not already have Node.js `20+`
+- Full AgentPay SDK runtime install: macOS or Linux, network access to download the public installer assets, and Homebrew (macOS) or a system package manager — apt-get, dnf, or pacman (Linux) — only when the machine does not already have Node.js `20+`
 - `--skills-only`: network access plus a writable home directory or Cursor workspace target
 
-The full one-click installer does not require local Cargo, pnpm, or a preinstalled Node runtime. It still installs Node `20+` locally when the machine does not already have a compatible Node available, because the `agentpay` launcher runs on Node.
+The full one-click installer does not require local Cargo, pnpm, or a preinstalled Node runtime. It still installs Node `20+` locally when the machine does not already have a compatible Node available, because the `agentpay` launcher runs on Node. On Linux, daemon features such as wallet signing use software keys; Secure Enclave and System Keychain integration are macOS-only.
 
 ### Install from source
 

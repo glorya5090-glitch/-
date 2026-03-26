@@ -12,13 +12,12 @@ const runtimeBinaries = [
   'agentpay-daemon',
   'agentpay-admin',
   'agentpay-agent',
-  'agentpay-system-keychain',
+  ...(process.platform === 'darwin' ? ['agentpay-system-keychain'] : []),
 ];
-const helperScripts = [
-  'run-agentpay-daemon.sh',
-  'install-user-daemon.sh',
-  'uninstall-user-daemon.sh',
-];
+const helperScripts =
+  process.platform === 'darwin'
+    ? ['run-agentpay-daemon.sh', 'install-user-daemon.sh', 'uninstall-user-daemon.sh']
+    : [];
 
 function die(message) {
   process.stderr.write(`[agentpay-bundle] ${message}\n`);
@@ -61,7 +60,8 @@ function parseArgs(argv) {
 
   if (!options.output) {
     const archLabel = process.arch === 'arm64' ? 'arm64' : process.arch === 'x64' ? 'x64' : process.arch;
-    options.output = path.join(repoRoot, `agentpay-sdk-macos-${archLabel}.tar.gz`);
+    const platformLabel = process.platform === 'darwin' ? 'macos' : process.platform;
+    options.output = path.join(repoRoot, `agentpay-sdk-${platformLabel}-${archLabel}.tar.gz`);
   }
 
   return options;
@@ -112,10 +112,6 @@ function stageProductionNodeModules(packageName, targetDir) {
 }
 
 function main() {
-  if (process.platform !== 'darwin') {
-    die('the installer bundle is currently built on macOS only');
-  }
-
   const { output } = parseArgs(process.argv.slice(2));
   const packageJsonPath = path.join(repoRoot, 'package.json');
   const distDir = path.join(repoRoot, 'dist');

@@ -88,7 +88,7 @@ Usage:
 
 What it does:
   - choose an install directory
-  - download a prebuilt AgentPay SDK runtime bundle for this macOS architecture
+  - download a prebuilt AgentPay SDK runtime bundle for this OS and architecture
   - install `agentpay` into a dedicated AGENTPAY_HOME without local Cargo or pnpm builds
   - auto-detect and preselect current AI agent skill targets
   - let the user toggle preset destinations and add custom skill/adaptor paths
@@ -401,6 +401,27 @@ ensure_homebrew() {
   command_exists brew || die "Homebrew install finished, but brew is still unavailable on PATH."
 }
 
+ensure_node_linux() {
+  if ! confirm "Node ${NODE_MIN_MAJOR}+ is required to run agentpay. Install it now?" "Y"; then
+    die "Node ${NODE_MIN_MAJOR}+ is required."
+  fi
+
+  if command_exists apt-get; then
+    say "Installing Node.js via apt-get (NodeSource)..."
+    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+    sudo apt-get install -y nodejs
+  elif command_exists dnf; then
+    say "Installing Node.js via dnf..."
+    sudo dnf install -y nodejs20 nodejs20-npm || sudo dnf module install -y nodejs:20/common
+  elif command_exists pacman; then
+    say "Installing Node.js via pacman..."
+    sudo pacman -S --noconfirm nodejs npm
+  else
+    die "No supported package manager found (apt-get, dnf, pacman). Install Node.js ${NODE_MIN_MAJOR}+ manually, then rerun."
+  fi
+  command_exists node || die "Node install finished, but node is still unavailable on PATH."
+}
+
 ensure_node() {
   local node_version node_major node_minor node_patch
 
@@ -413,18 +434,22 @@ ensure_node() {
     fi
   fi
 
-  ensure_homebrew
-  if ! confirm "Node ${NODE_MIN_MAJOR}+ is required to run agentpay. Install or update it with Homebrew now?" "Y"; then
-    die "Node ${NODE_MIN_MAJOR}+ is required."
-  fi
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    ensure_homebrew
+    if ! confirm "Node ${NODE_MIN_MAJOR}+ is required to run agentpay. Install or update it with Homebrew now?" "Y"; then
+      die "Node ${NODE_MIN_MAJOR}+ is required."
+    fi
 
-  if (( HAS_LOCAL_TTY == 1 )); then
-    brew install node@20 </dev/tty >/dev/tty 2>/dev/tty
+    if (( HAS_LOCAL_TTY == 1 )); then
+      brew install node@20 </dev/tty >/dev/tty 2>/dev/tty
+    else
+      brew install node@20
+    fi
+    export PATH="$(brew --prefix node@20)/bin:$PATH"
+    command_exists node || die "Node install finished, but node is still unavailable on PATH."
   else
-    brew install node@20
+    ensure_node_linux
   fi
-  export PATH="$(brew --prefix node@20)/bin:$PATH"
-  command_exists node || die "Node install finished, but node is still unavailable on PATH."
 
   node_version="$(node --version 2>/dev/null || true)"
   read -r node_major node_minor node_patch <<<"$(version_triplet_from_string "$node_version")"
@@ -519,18 +544,25 @@ resolve_run_admin_setup_default() {
 }
 
 resolve_runtime_bundle_asset_name() {
-  local machine
+  local os machine
+  os="$(uname -s)"
   machine="$(uname -m)"
-  case "$machine" in
-    arm64|aarch64)
-      printf 'agentpay-sdk-macos-arm64.tar.gz\n'
+  case "$os" in
+    Darwin)
+      case "$machine" in
+        arm64|aarch64) printf 'agentpay-sdk-macos-arm64.tar.gz\n' ;;
+        x86_64)        printf 'agentpay-sdk-macos-x64.tar.gz\n' ;;
+        *)             die "Unsupported macOS architecture: $machine" ;;
+      esac
       ;;
-    x86_64)
-      printf 'agentpay-sdk-macos-x64.tar.gz\n'
+    Linux)
+      case "$machine" in
+        aarch64|arm64) printf 'agentpay-sdk-linux-arm64.tar.gz\n' ;;
+        x86_64)        printf 'agentpay-sdk-linux-x64.tar.gz\n' ;;
+        *)             die "Unsupported Linux architecture: $machine" ;;
+      esac
       ;;
-    *)
-      die "Unsupported macOS architecture for the one-click bundle: $machine"
-      ;;
+    *) die "Unsupported OS: $os" ;;
   esac
 }
 
@@ -565,10 +597,10 @@ runtime_bundle_looks_usable() {
     [[ -x "$bundle_dir/runtime/bin/agentpay-daemon" ]] &&
     [[ -x "$bundle_dir/runtime/bin/agentpay-admin" ]] &&
     [[ -x "$bundle_dir/runtime/bin/agentpay-agent" ]] &&
-    [[ -x "$bundle_dir/runtime/bin/agentpay-system-keychain" ]] &&
-    [[ -x "$bundle_dir/runtime/bin/run-agentpay-daemon.sh" ]] &&
-    [[ -x "$bundle_dir/runtime/bin/install-user-daemon.sh" ]] &&
-    [[ -x "$bundle_dir/runtime/bin/uninstall-user-daemon.sh" ]] &&
+    { [[ "$(uname -s)" != "Darwin" ]] || [[ -x "$bundle_dir/runtime/bin/agentpay-system-keychain" ]]; } &&
+    { [[ "$(uname -s)" != "Darwin" ]] || [[ -x "$bundle_dir/runtime/bin/run-agentpay-daemon.sh" ]]; } &&
+    { [[ "$(uname -s)" != "Darwin" ]] || [[ -x "$bundle_dir/runtime/bin/install-user-daemon.sh" ]]; } &&
+    { [[ "$(uname -s)" != "Darwin" ]] || [[ -x "$bundle_dir/runtime/bin/uninstall-user-daemon.sh" ]]; } &&
     bundle_has_skill_pack "$bundle_dir"
 }
 
@@ -1866,7 +1898,12 @@ main() {
   parse_args "$@"
 
   if ! installer_mode_is_skills_only; then
-    [[ "$(uname -s)" == "Darwin" ]] || die "This installer currently supports macOS only."
+    local _os
+    _os="$(uname -s)"
+    case "$_os" in
+      Darwin|Linux) ;;
+      *) die "This installer supports macOS and Linux only. Got: $_os" ;;
+    esac
   fi
 
   init_prompt_io

@@ -23,7 +23,7 @@ die() {
 
 usage() {
   cat <<'EOF_USAGE'
-Run a GitHub-friendly macOS smoke test for the AgentPay one-click installer.
+Run a GitHub-friendly smoke test for the AgentPay one-click installer on macOS and Linux.
 
 Usage:
   scripts/run-installer-smoke.sh [options]
@@ -40,7 +40,7 @@ Behavior:
   - skips skills and admin setup
   - verifies agentpay and key runtime binaries after install
 
-This script is intended for macOS CI runners and local macOS smoke runs.
+This script is intended for macOS and Linux CI runners and local smoke runs.
 EOF_USAGE
 }
 
@@ -81,7 +81,12 @@ normalize_keep_work_dir() {
 }
 
 require_host() {
-  [[ "$(uname -s)" == "Darwin" ]] || die "This smoke runner currently supports macOS only."
+  local os
+  os="$(uname -s)"
+  case "$os" in
+    Darwin|Linux) ;;
+    *) die "This smoke runner supports macOS and Linux only. Got: $os" ;;
+  esac
   command -v tar >/dev/null 2>&1 || die "tar is required."
   command -v bash >/dev/null 2>&1 || die "bash is required."
   [[ -n "$BUNDLE_ARCHIVE" ]] || die "--bundle-archive is required."
@@ -156,7 +161,9 @@ verify_install() {
   [[ -x "$runtime_dir/bin/agentpay-admin" ]] || die "Missing agentpay-admin runtime entry after install."
   [[ -x "$runtime_dir/bin/agentpay-daemon" ]] || die "Missing agentpay-daemon runtime entry after install."
   [[ -x "$runtime_dir/bin/agentpay-agent" ]] || die "Missing agentpay-agent runtime entry after install."
-  [[ -x "$runtime_dir/bin/agentpay-system-keychain" ]] || die "Missing agentpay-system-keychain runtime entry after install."
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    [[ -x "$runtime_dir/bin/agentpay-system-keychain" ]] || die "Missing agentpay-system-keychain runtime entry after install."
+  fi
   [[ -f "$runtime_dir/app/package.json" ]] || die "Missing packaged CLI metadata after install."
   [[ -f "$runtime_dir/app/dist/cli.cjs" ]] || die "Missing packaged CLI entrypoint after install."
   [[ -d "$runtime_dir/app/node_modules" ]] || die "Missing packaged CLI runtime dependencies after install."
@@ -174,7 +181,7 @@ verify_install() {
       test -x "$AGENTPAY_HOME/bin/agentpay-admin"
       test -x "$AGENTPAY_HOME/bin/agentpay-daemon"
       test -x "$AGENTPAY_HOME/bin/agentpay-agent"
-      test -x "$AGENTPAY_HOME/bin/agentpay-system-keychain"
+      [[ "$(uname -s)" != "Darwin" ]] || test -x "$AGENTPAY_HOME/bin/agentpay-system-keychain"
       test -f "$AGENTPAY_HOME/app/package.json"
       test -f "$AGENTPAY_HOME/app/dist/cli.cjs"
       test -d "$AGENTPAY_HOME/app/node_modules"
