@@ -152,6 +152,98 @@ configure_shell() {
   success "Shell config updated ($shell_rc)"
 }
 
+install_rust() {
+  if cmd_exists cargo; then success "Rust already installed"; return; fi
+  header "Rust"
+  info "Installing Rust via rustup…"
+  curl -fsSL https://sh.rustup.rs | sh -s -- -y --no-modify-path
+  # shellcheck source=/dev/null
+  source "$HOME/.cargo/env"
+  success "Rust $(rustc --version) ready"
+}
+
+install_agentpay_linux() {
+  header "agentpay (Linux)"
+
+  local bin_dir="$HOME/.agentpay/bin"
+  if [ -x "$bin_dir/agentpay" ] && [ -x "$bin_dir/agentpay-daemon" ]; then
+    success "agentpay already installed"; return
+  fi
+
+  # Ensure Rust is available
+  install_rust
+  source "$HOME/.cargo/env" 2>/dev/null || true
+
+  # Build deps
+  case "$OS" in
+    debian) pkg_install build-essential pkg-config libssl-dev ;;
+    redhat) pkg_install gcc pkg-config openssl-devel ;;
+    arch)   pkg_install base-devel pkg-config openssl ;;
+  esac
+
+  # Clone into Linux FS to avoid Windows-FS binary corruption
+  local src_dir="$HOME/.agentpay-sdk-src"
+  if [ -d "$src_dir/.git" ]; then
+    info "Updating agentpay-sdk source…"
+    git -C "$src_dir" pull --ff-only
+  else
+    info "Cloning agentpay-sdk into Linux filesystem…"
+    git clone --depth=1 https://github.com/worldliberty/agentpay-sdk.git "$src_dir"
+  fi
+
+  # Install Node deps and build JS bundle
+  info "Building JS bundle…"
+  (cd "$src_dir" && pnpm install --frozen-lockfile && pnpm run build)
+
+  # Install CLI launcher and Rust binaries (writes to ~/.agentpay/bin)
+  info "Installing CLI launcher and Rust binaries…"
+  (cd "$src_dir" && pnpm run install:cli-launcher && pnpm run install:rust-binaries)
+
+  # Fix any CRLF line endings in shell scripts
+  for f in "$bin_dir"/*.sh; do
+    [ -f "$f" ] && sed -i 's/\r//' "$f"
+  done
+
+  success "agentpay installed to $bin_dir"
+}
+
+setup_linux_daemon() {
+  header "Linux daemon (systemd)"
+
+  # systemd user services require a real login session; skip in containers/CI
+  if ! cmd_exists systemctl; then
+    warn "systemctl not available — skipping daemon setup"
+    warn "Run 'agentpay admin setup' manually after starting a systemd session"
+    return
+  fi
+
+  local unit_dir="$HOME/.config/systemd/user"
+  local unit_file="$unit_dir/agentpay-daemon.service"
+  local bin_dir="$HOME/.agentpay/bin"
+
+  mkdir -p "$unit_dir"
+  cat > "$unit_file" <<EOF
+[Unit]
+Description=AgentPay daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${bin_dir}/agentpay-daemon
+Restart=on-failure
+RestartSec=5
+Environment=AGENTPAY_DAEMON_BIN=${bin_dir}/agentpay-daemon
+
+[Install]
+WantedBy=default.target
+EOF
+
+  systemctl --user daemon-reload
+  systemctl --user enable --now agentpay-daemon.service \
+    && success "agentpay-daemon systemd user service started" \
+    || warn "Could not start systemd user service — run manually: systemctl --user start agentpay-daemon"
+}
+
 setup_wallet() {
   header "Wallet setup"
   local wallet_dir="$HOME/.agentpay"
@@ -183,7 +275,11 @@ main() {
   install_node
   install_python
   configure_shell
-  [ "$OS" != "macos" ] && setup_wallet
+  if [ "$OS" != "macos" ]; then
+    install_agentpay_linux
+    setup_linux_daemon
+    setup_wallet
+  fi
   local shell_rc
   case "${SHELL:-}" in
     */zsh) shell_rc=".zshrc" ;;
