@@ -163,7 +163,7 @@ setup_wallet() {
   fi
   info "Initialising wallet…"
   if cmd_exists agentpay; then
-    agentpay wallet init && success "Wallet initialised"
+    agentpay admin setup && success "Wallet initialised"
   else
     # Stub wallet file so the PATH entry is meaningful even before agentpay binary is present
     printf '{"version":1,"created":"%s"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$wallet_file"
