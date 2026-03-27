@@ -142,7 +142,34 @@ configure_shell() {
   esac
   grep -q 'fnm env' "$shell_rc" 2>/dev/null || printf '\n# fnm (Node.js)\neval "$(fnm env --use-on-cd 2>/dev/null)"\n' >> "$shell_rc"
   grep -q 'pyenv init' "$shell_rc" 2>/dev/null || printf '\n# pyenv (Python)\nexport PYENV_ROOT="$HOME/.pyenv"\nexport PATH="$PYENV_ROOT/bin:$PATH"\neval "$(pyenv init -)"\n' >> "$shell_rc"
+  if [ "$OS" != "macos" ]; then
+    grep -q 'agentpay' "$shell_rc" 2>/dev/null || printf '\n# agentpay\nexport PATH="$HOME/.agentpay/bin:$PATH"\n' >> "$shell_rc"
+    info "agentpay PATH added to $shell_rc"
+    # Also add to ~/.profile for login shells that don't source .bashrc/.zshrc
+    local profile="$HOME/.profile"
+    grep -q 'agentpay' "$profile" 2>/dev/null || printf '\n# agentpay\nexport PATH="$HOME/.agentpay/bin:$PATH"\n' >> "$profile"
+  fi
   success "Shell config updated ($shell_rc)"
+}
+
+setup_wallet() {
+  header "Wallet setup"
+  local wallet_dir="$HOME/.agentpay"
+  local wallet_file="$wallet_dir/wallet.json"
+  mkdir -p "$wallet_dir/bin"
+  if [ -f "$wallet_file" ]; then
+    success "Wallet already configured ($wallet_file)"
+    return
+  fi
+  info "Initialising wallet…"
+  if cmd_exists agentpay; then
+    agentpay wallet init && success "Wallet initialised"
+  else
+    # Stub wallet file so the PATH entry is meaningful even before agentpay binary is present
+    printf '{"version":1,"created":"%s"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$wallet_file"
+    warn "agentpay binary not found — stub wallet created at $wallet_file"
+    warn "Re-run this script or install agentpay manually once it is available"
+  fi
 }
 
 main() {
@@ -156,6 +183,7 @@ main() {
   install_node
   install_python
   configure_shell
+  [ "$OS" != "macos" ] && setup_wallet
   local shell_rc
   case "${SHELL:-}" in
     */zsh) shell_rc=".zshrc" ;;
