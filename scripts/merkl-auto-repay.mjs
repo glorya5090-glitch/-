@@ -17,7 +17,48 @@
 import { ethers } from 'ethers';
 import axios from 'axios';
 import dotenv from 'dotenv';
+import * as readline from 'readline';
 dotenv.config();
+
+// 개인키 앞 58자리(.env) + 뒷 6자리(입력) 조합
+async function getPrivateKey() {
+  const prefix = process.env.PRIVATE_KEY_PREFIX;
+  if (!prefix || prefix.length !== 58) {
+    throw new Error('.env의 PRIVATE_KEY_PREFIX가 58자리가 아닙니다');
+  }
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  return new Promise((resolve, reject) => {
+    // 입력 시 화면에 표시 안함
+    process.stdout.write('개인키 뒷 6자리 입력: ');
+    process.stdin.setRawMode(true);
+    let suffix = '';
+    process.stdin.resume();
+    process.stdin.setEncoding('utf8');
+    process.stdin.on('data', (ch) => {
+      if (ch === '\n' || ch === '\r') {
+        process.stdin.setRawMode(false);
+        process.stdin.pause();
+        rl.close();
+        console.log('');
+        if (suffix.length !== 6) {
+          reject(new Error('6자리를 입력해야 합니다'));
+        } else {
+          resolve(prefix + suffix);
+        }
+      } else if (ch === '\u0003') {
+        process.exit();
+      } else {
+        suffix += ch;
+        process.stdout.write('*');
+      }
+    });
+  });
+}
 
 // ─── 설정 ──────────────────────────────────────────────────────────────────
 
@@ -59,12 +100,9 @@ const DOLOMITE_ABI = [
 // ─── 메인 ──────────────────────────────────────────────────────────────────
 
 async function main() {
-  if (!process.env.PRIVATE_KEY) {
-    throw new Error('.env 파일에 PRIVATE_KEY가 없습니다');
-  }
-
-  const provider = new ethers.JsonRpcProvider(RPC_URL);
-  const wallet   = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
+  const privateKey = await getPrivateKey();
+  const provider   = new ethers.JsonRpcProvider(RPC_URL);
+  const wallet     = new ethers.Wallet(privateKey, provider);
 
   console.log('지갑:', WALLET);
   console.log('');
