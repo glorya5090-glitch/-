@@ -233,6 +233,7 @@ ExecStart=${bin_dir}/agentpay-daemon
 Restart=on-failure
 RestartSec=5
 Environment=AGENTPAY_DAEMON_BIN=${bin_dir}/agentpay-daemon
+Environment=AGENTPAY_SIGNER_BACKEND=software
 
 [Install]
 WantedBy=default.target
