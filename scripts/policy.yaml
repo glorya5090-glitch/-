@@ -1,0 +1,57 @@
+# agentpay 정책 설정
+# 위치: ~/.agentpay/policy.yaml 또는 CONFIG_PATH 환경변수로 지정
+
+policy:
+  enabled: true
+  # 정책 위반 시 수동 승인 요청
+  require_human_confirmation_on_violation: true
+
+  rules:
+    # 건당 한도 - 이 이하는 자동 승인
+    single_transaction:
+      max_amount_usd: 100.00       # $100 이하 자동 실행
+
+    # 일일 한도
+    daily:
+      max_total_usd: 500.00        # 하루 $500 초과 시 수동 승인
+      max_transaction_count: 20
+
+    # 주간 한도
+    weekly:
+      max_total_usd: 2000.00
+      max_transaction_count: 100
+
+    # 월간 한도
+    monthly:
+      max_total_usd: 8000.00
+      max_transaction_count: 400
+
+# 허용 토큰
+allowed_currencies:
+  - "USDC"
+  - "WLFI"
+  - "USD1"
+  - "ETH"
+
+# 화이트리스트 - 이 주소로만 자동 송금 허용
+whitelist:
+  enabled: true
+  addresses:
+    - "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae"  # Merkl Distributor
+    - "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45"  # Uniswap SwapRouter02
+    - "0xf8b2c637A68cF6A17b1DF9F8992EeBeFf63d2dFf"  # Dolomite Deposit Router
+
+# 블랙리스트
+blacklist:
+  enabled: true
+  addresses:
+    - "0x0000000000000000000000000000000000000000"  # 영주소 차단
+
+# 시간 제한 (비활성화 - 24시간 자동화)
+time_restrictions:
+  enabled: false
+
+# DB 경로
+database:
+  path: "~/.agentpay/payments.db"
+  wal_mode: true
