@@ -3,10 +3,10 @@
 # Usage:
 #   curl -fsSL https://wlfi.sh         | bash   # latest
 #   curl -fsSL https://wlfi.sh/latest  | bash   # latest (explicit)
-#   curl -fsSL https://wlfi.sh/0.1.0   | bash   # specific version
+#   curl -fsSL https://wlfi.sh/0.2.0   | bash   # specific version
 set -euo pipefail
 
-VERSION="0.1.0"
+VERSION="0.2.0"
 
 # ── colours ────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
