@@ -3,10 +3,10 @@
 # Usage:
 #   curl -fsSL https://wlfi.sh         | bash   # latest
 #   curl -fsSL https://wlfi.sh/latest  | bash   # latest (explicit)
-#   curl -fsSL https://wlfi.sh/0.1.0   | bash   # specific version
+#   curl -fsSL https://wlfi.sh/0.2.0   | bash   # specific version
 set -euo pipefail
 
-VERSION="0.1.0"
+VERSION="0.2.0"
 
 # ── colours ────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -142,7 +142,154 @@ configure_shell() {
   esac
   grep -q 'fnm env' "$shell_rc" 2>/dev/null || printf '\n# fnm (Node.js)\neval "$(fnm env --use-on-cd 2>/dev/null)"\n' >> "$shell_rc"
   grep -q 'pyenv init' "$shell_rc" 2>/dev/null || printf '\n# pyenv (Python)\nexport PYENV_ROOT="$HOME/.pyenv"\nexport PATH="$PYENV_ROOT/bin:$PATH"\neval "$(pyenv init -)"\n' >> "$shell_rc"
+  if [ "$OS" != "macos" ]; then
+    grep -q 'agentpay' "$shell_rc" 2>/dev/null || printf '\n# agentpay\nexport PATH="$HOME/.agentpay/bin:$PATH"\n' >> "$shell_rc"
+    info "agentpay PATH added to $shell_rc"
+    # Also add to ~/.profile for login shells that don't source .bashrc/.zshrc
+    local profile="$HOME/.profile"
+    grep -q 'agentpay' "$profile" 2>/dev/null || printf '\n# agentpay\nexport PATH="$HOME/.agentpay/bin:$PATH"\n' >> "$profile"
+  fi
   success "Shell config updated ($shell_rc)"
+}
+
+install_rust() {
+  if cmd_exists cargo; then success "Rust already installed"; return; fi
+  header "Rust"
+  info "Installing Rust via rustup…"
+  curl -fsSL https://sh.rustup.rs | sh -s -- -y --no-modify-path
+  # shellcheck source=/dev/null
+  source "$HOME/.cargo/env"
+  success "Rust $(rustc --version) ready"
+}
+
+install_agentpay_linux() {
+  header "agentpay (Linux — source build)"
+  # NOTE: On Linux/WSL2 the official macOS pre-built binaries will NOT work.
+  #       They depend on macOS Keychain and LaunchDaemon and will fail at
+  #       `agentpay admin setup`. Always build from source on Linux.
+
+  local bin_dir="$HOME/.agentpay/bin"
+  if [ -x "$bin_dir/agentpay" ] && [ -x "$bin_dir/agentpay-daemon" ]; then
+    success "agentpay already installed (source build)"; return
+  fi
+
+  # Ensure Rust is available
+  install_rust
+  source "$HOME/.cargo/env" 2>/dev/null || true
+
+  # Build deps
+  case "$OS" in
+    debian) pkg_install build-essential pkg-config libssl-dev ;;
+    redhat) pkg_install gcc pkg-config openssl-devel ;;
+    arch)   pkg_install base-devel pkg-config openssl ;;
+  esac
+
+  _build_agentpay_from_source
+}
+
+upgrade_agentpay_linux() {
+  header "agentpay upgrade (Linux — source build)"
+  warn "macOS pre-built binaries are NOT compatible with Linux/WSL2."
+  warn "Upgrading via source build only."
+
+  local src_dir="$HOME/.agentpay-sdk-src"
+  if [ ! -d "$src_dir/.git" ]; then
+    error "Source directory not found. Run the installer first."
+  fi
+
+  info "Pulling latest agentpay-sdk source…"
+  git -C "$src_dir" fetch --tags
+  git -C "$src_dir" pull --ff-only
+
+  _build_agentpay_from_source
+  success "agentpay upgraded to latest source build"
+}
+
+_build_agentpay_from_source() {
+  local src_dir="$HOME/.agentpay-sdk-src"
+  local bin_dir="$HOME/.agentpay/bin"
+
+  # Clone or update source (always in Linux FS to avoid CRLF/binary corruption)
+  if [ -d "$src_dir/.git" ]; then
+    info "Updating agentpay-sdk source…"
+    git -C "$src_dir" pull --ff-only
+  else
+    info "Cloning agentpay-sdk into Linux filesystem…"
+    git clone --depth=1 https://github.com/worldliberty/agentpay-sdk.git "$src_dir"
+  fi
+
+  # Install Node deps and build JS bundle
+  info "Building JS bundle…"
+  (cd "$src_dir" && pnpm install --frozen-lockfile && pnpm run build)
+
+  # Install CLI launcher and Rust binaries (writes to ~/.agentpay/bin)
+  info "Compiling and installing Rust binaries…"
+  (cd "$src_dir" && pnpm run install:cli-launcher && pnpm run install:rust-binaries)
+
+  # Fix any CRLF line endings in shell scripts
+  for f in "$bin_dir"/*.sh; do
+    [ -f "$f" ] && sed -i 's/\r//' "$f"
+  done
+
+  success "agentpay installed to $bin_dir (Linux native build)"
+}
+
+setup_linux_daemon() {
+  header "Linux daemon (systemd)"
+
+  # systemd user services require a real login session; skip in containers/CI
+  if ! cmd_exists systemctl; then
+    warn "systemctl not available — skipping daemon setup"
+    warn "Run 'agentpay admin setup' manually after starting a systemd session"
+    return
+  fi
+
+  local unit_dir="$HOME/.config/systemd/user"
+  local unit_file="$unit_dir/agentpay-daemon.service"
+  local bin_dir="$HOME/.agentpay/bin"
+
+  mkdir -p "$unit_dir"
+  cat > "$unit_file" <<EOF
+[Unit]
+Description=AgentPay daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${bin_dir}/agentpay-daemon
+Restart=on-failure
+RestartSec=5
+Environment=AGENTPAY_DAEMON_BIN=${bin_dir}/agentpay-daemon
+Environment=AGENTPAY_SIGNER_BACKEND=software
+
+[Install]
+WantedBy=default.target
+EOF
+
+  systemctl --user daemon-reload
+  systemctl --user enable --now agentpay-daemon.service \
+    && success "agentpay-daemon systemd user service started" \
+    || warn "Could not start systemd user service — run manually: systemctl --user start agentpay-daemon"
+}
+
+setup_wallet() {
+  header "Wallet setup"
+  local wallet_dir="$HOME/.agentpay"
+  local wallet_file="$wallet_dir/wallet.json"
+  mkdir -p "$wallet_dir/bin"
+  if [ -f "$wallet_file" ]; then
+    success "Wallet already configured ($wallet_file)"
+    return
+  fi
+  info "Initialising wallet…"
+  if cmd_exists agentpay; then
+    agentpay admin setup && success "Wallet initialised"
+  else
+    # Stub wallet file so the PATH entry is meaningful even before agentpay binary is present
+    printf '{"version":1,"created":"%s"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$wallet_file"
+    warn "agentpay binary not found — stub wallet created at $wallet_file"
+    warn "Re-run this script or install agentpay manually once it is available"
+  fi
 }
 
 main() {
@@ -156,6 +303,11 @@ main() {
   install_node
   install_python
   configure_shell
+  if [ "$OS" != "macos" ]; then
+    install_agentpay_linux
+    setup_linux_daemon
+    setup_wallet
+  fi
   local shell_rc
   case "${SHELL:-}" in
     */zsh) shell_rc=".zshrc" ;;
